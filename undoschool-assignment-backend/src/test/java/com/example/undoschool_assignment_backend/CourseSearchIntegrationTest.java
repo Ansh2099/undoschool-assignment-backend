@@ -23,12 +23,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@RequiredArgsConstructor
 public class CourseSearchIntegrationTest {
 
-    private final MockMvc mockMvc;
-    private final ElasticsearchClient client;
-    private final CourseService courseService;
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ElasticsearchClient client;
+
+    @Autowired
+    private CourseService courseService;
 
     @BeforeEach
     void setupTestIndex() throws Exception {
