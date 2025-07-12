@@ -3,67 +3,70 @@ package com.example.undoschool_assignment_backend.service;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
+import co.elastic.clients.elasticsearch.core.BulkRequest;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
-import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
+import co.elastic.clients.elasticsearch.core.search.CompletionSuggestOption;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.core.search.Suggestion;
+import co.elastic.clients.json.JsonData;
 import com.example.undoschool_assignment_backend.document.CourseDocument;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.*;
-import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
-import org.springframework.data.elasticsearch.core.query.IndexQuery;
-import org.springframework.data.elasticsearch.core.query.IndexQueryBuilder;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import co.elastic.clients.json.JsonData;
+import co.elastic.clients.elasticsearch._types.query_dsl.RangeQuery;
 
 import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CourseService {
 
-    private static final Logger logger = LoggerFactory.getLogger(CourseService.class);
-    private static final String INDEX = "course_document"; // ES index name (change if needed)
-
+    private static final String INDEX = "courses";
     private final ElasticsearchClient elasticsearchClient;
 
     public void bulkIndex(List<CourseDocument> courses) {
-            List<IndexQuery> queries = courses.stream()
-                    .map(course -> new IndexQueryBuilder()
-                            .withId(course.getId())
-                            .withObject(course)
-                            .build())
-                    .toList();
+        try {
+            BulkRequest.Builder br = new BulkRequest.Builder();
+            for (CourseDocument course : courses) {
+                br.operations(op -> op
+                        .index(idx -> idx
+                                .index(INDEX)
+                                .id(course.getId())
+                                .document(course)
+                        )
+                );
+            }
 
-            elasticsearchRestTemplate.bulkIndex(queries, IndexCoordinates.of("courses"));
+            br.refresh(co.elastic.clients.elasticsearch._types.Refresh.True);
 
-            // 🔥 THIS IS CRITICAL
-            elasticsearchRestTemplate.indexOps(IndexCoordinates.of("courses")).refresh();
-
+            elasticsearchClient.bulk(br.build());
             log.info("Successfully indexed {} courses.", courses.size());
-
-    } catch (IOException e) {
-            logger.error("Bulk index failed", e);
+        } catch (IOException e) {
+            log.error("Bulk indexing failed", e);
         }
     }
 
-
     public Page<CourseDocument> searchCourses(
-            String q, Integer minAge, Integer maxAge, String category, String type,
-            Double minPrice, Double maxPrice, ZonedDateTime startDate,
-            String sort, int page, int size
+            String q,
+            Integer minAge, Integer maxAge,
+            String category, String type,
+            Double minPrice, Double maxPrice,
+            ZonedDateTime startDate,
+            String sort,
+            int page, int size
     ) {
         try {
             BoolQuery.Builder boolQuery = new BoolQuery.Builder();
 
-            // Text search
             if (q != null && !q.isBlank()) {
                 boolQuery.must(MultiMatchQuery.of(m -> m
                         .query(q)
@@ -74,13 +77,18 @@ public class CourseService {
                 boolQuery.must(MatchAllQuery.of(m -> m)._toQuery());
             }
 
-            // Filters
             if (category != null && !category.isBlank()) {
-                boolQuery.filter(TermQuery.of(t -> t.field("category.keyword").value(category))._toQuery());
+                boolQuery.filter(TermQuery.of(t -> t
+                        .field("category.keyword")
+                        .value(category)
+                )._toQuery());
             }
 
             if (type != null && !type.isBlank()) {
-                boolQuery.filter(TermQuery.of(t -> t.field("type.keyword").value(type))._toQuery());
+                boolQuery.filter(TermQuery.of(t -> t
+                        .field("type.keyword")
+                        .value(type)
+                )._toQuery());
             }
 
             if (startDate != null) {
@@ -118,9 +126,9 @@ public class CourseService {
                 )._toQuery());
             }
 
-            // Sorting
-            String sortField;
-            SortOrder sortOrder;
+            final String sortField;
+            final SortOrder sortOrder;
+
             if ("priceAsc".equalsIgnoreCase(sort)) {
                 sortField = "price";
                 sortOrder = SortOrder.Asc;
@@ -132,32 +140,30 @@ public class CourseService {
                 sortOrder = SortOrder.Asc;
             }
 
-            // Execute search
             SearchRequest request = SearchRequest.of(s -> s
                     .index(INDEX)
                     .from(page * size)
                     .size(size)
                     .query(boolQuery.build()._toQuery())
-                    .sort(sortBuilder -> sortBuilder
-                            .field(f -> f
-                                    .field(sortField)
-                                    .order(sortOrder)
-                            )
-                    )
+                    .sort(sb -> sb.field(f -> f
+                            .field(sortField)
+                            .order(sortOrder)
+                    ))
             );
 
-            SearchResponse<CourseDocument> response = elasticsearchClient.search(request, CourseDocument.class);
+            SearchResponse<CourseDocument> response =
+                    elasticsearchClient.search(request, CourseDocument.class);
 
-            List<CourseDocument> results = new ArrayList<>();
+            List<CourseDocument> hits = new ArrayList<>();
             for (Hit<CourseDocument> hit : response.hits().hits()) {
-                results.add(hit.source());
+                hits.add(hit.source());
             }
 
-            assert response.hits().total() != null;
-            return new PageImpl<>(results, PageRequest.of(page, size), response.hits().total().value());
+            long total = response.hits().total() != null ? response.hits().total().value() : 0;
+            return new PageImpl<>(hits, PageRequest.of(page, size), total);
 
         } catch (IOException e) {
-            logger.error("Search failed", e);
+            log.error("Search failed", e);
             return Page.empty();
         }
     }
@@ -166,35 +172,38 @@ public class CourseService {
         if (partialTitle == null || partialTitle.isBlank()) {
             return Collections.emptyList();
         }
-
         try {
-            PrefixQuery prefixQuery = PrefixQuery.of(p -> p
-                    .field("title.keyword")
-                    .value(partialTitle.toLowerCase())
-            );
-
-            SearchRequest request = SearchRequest.of(s -> s
+            SearchRequest req = SearchRequest.of(s -> s
                     .index(INDEX)
-                    .query(prefixQuery._toQuery())
-                    .size(10)
-                    .source(src -> src
-                            .filter(f -> f
-                                    .includes("title")
+                    .suggest(sg -> sg
+                            .suggesters("course-suggest", sug -> sug
+                                    .prefix(partialTitle)
+                                    .completion(c -> c
+                                            .field("suggest")
+                                            .skipDuplicates(true)
+                                            .size(10)
+                                    )
                             )
                     )
             );
 
-            SearchResponse<CourseDocument> response = elasticsearchClient.search(request, CourseDocument.class);
+            SearchResponse<CourseDocument> resp =
+                    elasticsearchClient.search(req, CourseDocument.class);
 
-            return response.hits().hits().stream()
-                    .map(Hit::source).filter(Objects::nonNull)
-                    .map(CourseDocument::getTitle)
-                    .filter(title -> title != null && !title.isBlank())
-                    .distinct()
+            List<Suggestion<CourseDocument>> suggestions =
+                    resp.suggest().get("course-suggest");
+
+            log.info("Response from ES: {}", resp);
+
+
+            return suggestions.stream()
+                    .flatMap(s -> s.completion().options().stream())
+                    .map(CompletionSuggestOption::text)
                     .toList();
 
+
         } catch (IOException e) {
-            logger.error("Suggestion failed for: {}", partialTitle, e);
+            log.error("Autocomplete suggestion failed", e);
             return Collections.emptyList();
         }
     }
