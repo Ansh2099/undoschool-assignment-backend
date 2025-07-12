@@ -1,17 +1,17 @@
 package com.example.undoschool_assignment_backend.document;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
-import org.springframework.data.elasticsearch.annotations.CompletionField;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 import java.time.ZonedDateTime;
-import java.util.Collections;
 import java.util.List;
 
 @Data
-@JsonInclude(JsonInclude.Include.NON_NULL)
+@NoArgsConstructor
+@AllArgsConstructor
 public class CourseDocument {
-
     private String id;
     private String title;
     private String description;
@@ -23,12 +23,12 @@ public class CourseDocument {
     private Double price;
     private ZonedDateTime nextSessionDate;
 
-    @CompletionField
-    private List<String> suggest;
+    @JsonProperty("suggest")
+    private SuggestField suggest;
 
     public void buildSuggest() {
         if (title != null && !title.isBlank()) {
-            this.suggest = Collections.singletonList(title);
+            this.suggest = new SuggestField(List.of(title));
         }
     }
 }
