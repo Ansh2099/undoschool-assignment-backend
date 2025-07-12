@@ -2,6 +2,7 @@ package com.example.undoschool_assignment_backend.document;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
+import org.springframework.data.elasticsearch.annotations.CompletionField;
 
 import java.time.ZonedDateTime;
 import java.util.Collections;
@@ -22,6 +23,7 @@ public class CourseDocument {
     private Double price;
     private ZonedDateTime nextSessionDate;
 
+    @CompletionField
     private List<String> suggest;
 
     public void buildSuggest() {

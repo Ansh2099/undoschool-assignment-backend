@@ -12,6 +12,9 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.*;
+import org.springframework.data.elasticsearch.core.mapping.IndexCoordinates;
+import org.springframework.data.elasticsearch.core.query.IndexQuery;
+import org.springframework.data.elasticsearch.core.query.IndexQueryBuilder;
 import org.springframework.stereotype.Service;
 import co.elastic.clients.json.JsonData;
 
@@ -32,20 +35,21 @@ public class CourseService {
     private final ElasticsearchClient elasticsearchClient;
 
     public void bulkIndex(List<CourseDocument> courses) {
-        try {
-            List<BulkOperation> operations = courses.stream()
-                    .map(course -> BulkOperation.of(op -> op
-                            .index(idx -> idx
-                                    .index(INDEX)
-                                    .id(course.getId())  // Ensure ID is set
-                                    .document(course)
-                            )
-                    ))
+            List<IndexQuery> queries = courses.stream()
+                    .map(course -> new IndexQueryBuilder()
+                            .withId(course.getId())
+                            .withObject(course)
+                            .build())
                     .toList();
 
-            elasticsearchClient.bulk(b -> b.index(INDEX).operations(operations));
-            logger.info("Successfully indexed {} courses.", courses.size());
-        } catch (IOException e) {
+            elasticsearchRestTemplate.bulkIndex(queries, IndexCoordinates.of("courses"));
+
+            // 🔥 THIS IS CRITICAL
+            elasticsearchRestTemplate.indexOps(IndexCoordinates.of("courses")).refresh();
+
+            log.info("Successfully indexed {} courses.", courses.size());
+
+    } catch (IOException e) {
             logger.error("Bulk index failed", e);
         }
     }

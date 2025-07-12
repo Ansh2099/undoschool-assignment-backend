@@ -31,7 +31,6 @@ public class DataLoader {
 
     @EventListener(ApplicationReadyEvent.class)
     public void loadData() throws IOException {
-
         try (InputStream inputStream = new ClassPathResource("sample-courses.json").getInputStream()) {
             logger.info("Loading course data from sample-courses.json...");
 
@@ -42,6 +41,8 @@ public class DataLoader {
 
             logger.info("Successfully deserialized {} courses from JSON.", courses.size());
             logger.info("Populating suggest fields for autocompletion...");
+
+            // Assuming CourseDocument has a buildSuggest() method
             courses.forEach(CourseDocument::buildSuggest);
 
             logger.info("Starting bulk-indexing of courses into Elasticsearch...");
