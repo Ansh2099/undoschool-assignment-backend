@@ -17,7 +17,7 @@ public class ElasticsearchConfig {
 
     @Bean
     public ElasticsearchClient elasticsearchClient() {
-        // Register JavaTimeModule for ZonedDateTime support
+
         ObjectMapper jackson = new ObjectMapper();
         jackson.registerModule(new JavaTimeModule());
 
